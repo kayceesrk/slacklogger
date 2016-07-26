@@ -13,3 +13,5 @@ PKG slacko
 PKG str
 PKG cmdliner
 PKG ptime
+PKG irmin
+PKG irmin.unix

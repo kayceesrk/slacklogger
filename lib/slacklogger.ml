@@ -10,7 +10,12 @@ type info =
 
 let section = Lwt_log.Section.make "slacklogger"
 
-let get_rtm_uri ~token =
+let human_of_timestamp ts =
+  match Ptime.(int_of_string ts |> Span.of_int_s |> add_span epoch) with
+  | None -> failwith "impossible"
+  | Some t -> Format.asprintf "%a" Ptime.pp t
+
+let rtm_uri_of_token ~token =
   let url = "https://slack.com/api/rtm.start?token=" ^ token in
   let open Ezjsonm in
   Cohttp_lwt_unix.Client.get (Uri.of_string url) >>= fun (resp, body) ->
@@ -26,7 +31,7 @@ let get_rtm_uri ~token =
     Lwt_log.debug_f ~section "get_ws_uri: uri=%s\n" uri_str >|= fun () ->
     Uri.of_string uri_str
 
-let mk_rtm_stream ~uri =
+let rtm_stream_of_rtm_uri ~uri =
   let open Lwt.Infix in
   let open Websocket_lwt in
   let open Frame in
@@ -110,72 +115,142 @@ let rec log_to_cmdline {msg_stream; close_connection} =
   in
   react_forever () <?> watch_stdin ()
 
-let rec log_to_db db {msg_stream; close_connection} =
+open Irmin_unix
+
+module Store = Irmin_git.FS(Irmin.Contents.Cstruct)(Irmin.Ref.String)(Irmin.Hash.SHA1)
+module View = Irmin.View(Store)
+module IO = Git_unix.FS.IO
+
+let rec log_to_db git_or_db {msg_stream; close_connection} =
+  let channels_map = Hashtbl.create 17 in
+  let users_map = Hashtbl.create 17 in
+
+  let db_file =
+    match git_or_db with
+    | `Git root -> Filename.concat root "db"
+    | `Database db_file -> db_file
+  in
+
+  let init_hashtbls () =
+    let open Sqlite3 in
+    let open Sqlite3.Rc in
+    let db = db_open db_file in
+
+    begin match exec_no_headers db "select * from channels" ~cb:(function
+      | [| Some id; Some name |] -> Hashtbl.add channels_map id name
+      | _ -> failwith "impossible")
+    with
+    | OK -> ()
+    | _ as e -> failwith @@ "select from channels failed: " ^ to_string e
+    end;
+
+    match exec_no_headers db "select * from users" ~cb:(function
+      | [| Some id; Some name |] -> Hashtbl.add users_map id name
+      | _ -> failwith "impossible")
+    with
+    | OK -> ()
+    | _ as e -> failwith @@ "select from users failed: " ^ to_string e
+  in
+  init_hashtbls ();
+
+  let git_commit commit_msg = function
+    | None -> Lwt.return ()
+    | Some t ->
+        IO.read_file db_file >>= fun contents ->
+        Irmin.with_hrw_view (module View) (t commit_msg) `Merge ~path:[] (fun view ->
+          View.update view ["db"] contents) >>=
+        Irmin.Merge.exn
+  in
+
   Lwt_io.printf "Logging Slack activity. Press Ctrl+d to quit\n%!" >>= fun () ->
-  let rec react_forever () =
+
+  let rec react_forever store =
     Lwt_stream.get msg_stream >>= fun data ->
-    begin match data with
-    | None -> Lwt.return @@ close_connection ()
-    | Some data ->
     let open Ezjsonm in
     let open Sqlite3 in
     let open Sqlite3.Rc in
-    let json = from_string data in
-    let typ = get_string @@ find json ["type"] in
+    let db = db_open db_file in
 
-    match typ with
-    | "message" ->
-        let channel_id = get_string @@ find json ["channel"] in
-        let user_id = get_string @@ find json ["user"] in
-        let ts_id = Str.split (Str.regexp "\\.") @@
-                      get_string @@ find json ["ts"]
-        in
-        let ts, id =
-          match ts_id with
-          | ts::id::_ -> ts,id
-          | _ -> failwith "unexpected ts format in message"
-        in
-        let text = get_string @@ find json ["text"] in
-        let q =
-          Printf.sprintf
-            "insert into messages values (\"%s\",\"%s\",\"%s\",\"%s\",\"%s\")"
-            id ts text channel_id user_id
-        in
-        begin match exec db q with
-        | OK -> Lwt_log.info ~section q
-        | _ -> failwith "message insert error"
-        end
+    begin match data with
+    | None ->
+        close_connection ();
+        Lwt.fail Exit
+    | Some data ->
+      let json = from_string data in
+      let typ = get_string @@ find json ["type"] in
 
-    | "channel_created" ->
-        let channel_id = get_string @@ find json ["channel"; "id"] in
-        let channel_name = get_string @@ find json ["channel"; "name"] in
-        let q =
-          Printf.sprintf
-            "insert into channels values (\"%s\",\"%s\")"
-            channel_id channel_name
-        in
-        begin match exec db q with
-        | OK -> Lwt_log.info ~section q
-        | _ -> failwith "user insert error"
-        end
+      match typ with
+      | "message" ->
+          let channel_id = get_string @@ find json ["channel"] in
+          let user_id = get_string @@ find json ["user"] in
+          let ts_id = Str.split (Str.regexp "\\.") @@
+                        get_string @@ find json ["ts"]
+          in
+          let ts, id =
+            match ts_id with
+            | ts::id::_ -> ts,id
+            | _ -> failwith "unexpected ts format in message"
+          in
+          let text = get_string @@ find json ["text"] in
+          let q =
+            Printf.sprintf
+              "insert into messages values (\"%s\",\"%s\",\"%s\",\"%s\",\"%s\")"
+              id ts text channel_id user_id
+          in
+          begin match exec db q with
+          | OK ->
+              let user = Hashtbl.find users_map user_id in
+              let hum_ts = human_of_timestamp ts in
+              let channel = Hashtbl.find channels_map channel_id in
+              let fmt_msg = Printf.sprintf "message | %s on %s in %s\n%s"
+                              user hum_ts channel text
+              in
+              git_commit fmt_msg store >>= fun () ->
+              Lwt_log.info ~section q
+          | _ as e -> failwith @@ "insert into messages failed: " ^ to_string e
+          end
 
-    | "team_join" ->
-        let user_id = get_string @@ find json ["user"; "id"] in
-        let user_name = get_string @@ find json ["user"; "name"] in
-        let q =
-          Printf.sprintf
-            "insert into users values (\"%s\",\"%s\")"
-            user_id user_name
-        in
-        begin match exec db q with
-        | OK -> Lwt_log.info ~section q
-        | _ -> failwith "user insert error"
-        end
+      | "channel_created" ->
+          let channel_id = get_string @@ find json ["channel"; "id"] in
+          let channel_name = get_string @@ find json ["channel"; "name"] in
+          let q =
+            Printf.sprintf
+              "insert into channels values (\"%s\",\"%s\")"
+              channel_id channel_name
+          in
+          begin match exec db q with
+          | OK ->
+              Hashtbl.add channels_map channel_id channel_name;
+              let fmt_msg = Printf.sprintf "channel created | %s" channel_name
+              in
+              git_commit fmt_msg store >>= fun () ->
+              Lwt_log.info ~section q
+          | _ -> failwith "insert into channels failed"
+          end
 
-    (* Ignore all other messages for now *)
-    | _ -> Lwt.return ()
+      | "team_join" ->
+          let user_id = get_string @@ find json ["user"; "id"] in
+          let user_name = get_string @@ find json ["user"; "name"] in
+          let q =
+            Printf.sprintf
+              "insert into users values (\"%s\",\"%s\")"
+              user_id user_name
+          in
+          begin match exec db q with
+          | OK ->
+              Hashtbl.add users_map user_id user_name;
+              let fmt_msg = Printf.sprintf "user joined | %s" user_name in
+              git_commit fmt_msg store >>= fun () ->
+              Lwt_log.info ~section q
+          | _ -> failwith "insert into users failed"
+          end
 
-    end >>= react_forever
+      (* Ignore all other messages for now *)
+      | _ -> Lwt.return ()
+
+      end >>= fun () ->
+      ignore @@ db_close db;
+      react_forever store
   in
   let rec watch_stdin () =
     Lwt_io.(read_line_opt stdin) >>= function
@@ -184,12 +259,22 @@ let rec log_to_db db {msg_stream; close_connection} =
       Lwt.return @@ close_connection ()
     | Some content -> watch_stdin ()
   in
-  react_forever () <?> watch_stdin ()
 
-let create_tables db =
+  begin
+    match git_or_db with
+    | `Database _ -> Lwt.return None
+    | `Git root ->
+        let config = Irmin_fs.config ~root () in
+        Store.Repo.create config >>=
+        Store.master task >|= fun t -> Some t
+  end >>= fun store ->
+  (react_forever store) <?> watch_stdin ()
+
+let create_tables ~database =
   let open Sqlite3 in
   let open Sqlite3.Rc in
 
+  let db = db_open database in
   begin
     match exec db "CREATE TABLE channels( \
                      id text primary key, \
@@ -219,7 +304,7 @@ let create_tables db =
                      foreign key(channel_id) references channels(id),
                      foreign key(user_id) references users(id));"
     with
-    | OK -> ()
+    | OK -> ignore @@ db_close db
     | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
   end
 
@@ -241,9 +326,10 @@ let get_channels_info, get_users_info =
   (fun ~token -> fetch_info Slacko.channels_list "channels" token),
   (fun ~token -> fetch_info Slacko.users_list "members" token)
 
-let populate_db db ~token =
+let populate_db ~database ~token =
   let open Sqlite3 in
   let open Sqlite3.Rc in
+  let db = db_open database in
 
   get_channels_info token >>= fun channels_info ->
     List.iter (fun {id; name} ->
@@ -257,11 +343,14 @@ let populate_db db ~token =
     let query = Printf.sprintf "INSERT INTO users VALUES (\"%s\",\"%s\")" id name in
     match exec db query with
     | OK | CONSTRAINT -> ()
-    | _ as e -> failwith @@ "populate channels failed: " ^ to_string e) users_info
+    | _ as e -> failwith @@ "populate users failed: " ^ to_string e) users_info;
 
-let query_db db =
+  ignore @@ db_close db
+
+let query_db ~database =
   let open Sqlite3 in
   let open Sqlite3.Rc in
+  let db = db_open database in
   let query = "select messages.ts as timestamp, channels.name as channel, users.name as user, messages.msg as text \
                from messages \
                left join channels on messages.channel_id = channels.id \
@@ -270,16 +359,14 @@ let query_db db =
   let rows = ref [] in
   match exec_no_headers db query ~cb:(function
     | [| Some ts; Some channel; Some user; Some text |] ->
-        let hum_ts =
-          match Ptime.(int_of_string ts |> Span.of_int_s |> add_span epoch) with
-          | None -> failwith "impossible"
-          | Some t -> Format.asprintf "%a" Ptime.pp t
-        in
+        let hum_ts = human_of_timestamp ts in
         let json = Ezjsonm.(dict [("ts",string hum_ts);("channel",string channel);
                                   ("user",string user);("text",string text)])
         in
         rows := json::!rows
     | _ -> failwith "impossible")
   with
-  | OK -> `A (List.rev !rows)
+  | OK ->
+      ignore @@ db_close db;
+      `A (List.rev !rows)
   | _ as e -> failwith (to_string e)

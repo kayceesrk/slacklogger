@@ -8,6 +8,10 @@ let db =
   let doc = "Sqlite3 database file." in
   Cmdliner.Arg.(value & opt (some string) None & info ["d"; "database"] ~docv:"DATABASE" ~doc)
 
+let git =
+  let doc = "Git repo containing Sqlite3 database file in the root directory." in
+  Cmdliner.Arg.(value & opt (some string) None & info ["g"; "git"] ~docv:"GIT_REPO" ~doc)
+
 let query =
   let doc = "Query the database." in
   Cmdliner.Arg.(value & flag & info ["q"; "query"] ~doc)
@@ -24,17 +28,15 @@ let info =
   let doc = "Log Slack messages" in
   Cmdliner.Term.info "slack-logger" ~doc
 
-let execute token db init_tables verbose query =
+let execute token db init_tables verbose query git =
   let open Slacklogger in
   Lwt_main.run begin
   if verbose then Lwt_log.add_rule "*" Lwt_log.Info;
   if query then
     match db with
-    | None -> failwith "Database required for querying!"
+    | None -> failwith "Database file required for querying!"
     | Some db_file ->
-        let open Sqlite3 in
-        let db = db_open db_file in
-        let json = query_db db in
+        let json = query_db db_file in
         Ezjsonm.to_channel ~minify:false stdout json;
         Lwt.return ()
   else
@@ -43,23 +45,30 @@ let execute token db init_tables verbose query =
   | Some token ->
   get_rtm_uri token >>= fun uri ->
   mk_rtm_stream ~uri >>= fun rtm_stream ->
+  let init_db db_file =
+    if init_tables then begin
+      try create_tables db_file
+      with _ -> failwith "Database already has tables?"
+    end;
+    populate_db ~database:db_file ~token >>= fun () ->
+    Lwt.return ()
+  in
   match db with
-  | None ->
-      log_to_cmdline rtm_stream
   | Some db_file ->
-      let open Sqlite3 in
-      let db = db_open db_file in
-      if init_tables then begin
-        try create_tables db
-        with _ -> failwith "Database already has tables?"
-      end;
-      populate_db db ~token >>= fun () ->
-      log_to_db db rtm_stream >|= fun () ->
-      ignore @@ db_close db
+      init_db db_file >>= fun () ->
+      log_to_db (`Database db_file) rtm_stream
+  | None ->
+   begin match git with
+     | Some git_repo ->
+         let db_file = Filename.concat git_repo "db" in
+         init_db db_file >>= fun () ->
+         log_to_db (`Git git_repo) rtm_stream
+     | None -> log_to_cmdline rtm_stream
+   end
   end
 
 let execute_t = Cmdliner.Term.(pure execute $ token $ db $ init_tables $ verbose
-                  $ query)
+                  $ query $ git)
 
 let () =
   match Cmdliner.Term.eval (execute_t, info) with

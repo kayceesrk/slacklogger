@@ -5,10 +5,12 @@ true : bin_annot, safe_string, package(bytes)
 <lib/slacklogger.{ml,mli}>: \
 	package(lwt), package(cohttp), package(cohttp.lwt), \
 	package(ezjsonm), package(websocket), package(websocket.lwt), \
-	package(sqlite3), package(slacko), package(str), package(ptime)
+	package(sqlite3), package(slacko), package(str), package(ptime), \
+	package(irmin), package(irmin.unix), package(git.unix)
 
 <lib/slacklogger_app.*>: \
 	package(lwt), package(cohttp), package(cohttp.lwt), \
 	package(ezjsonm), package(websocket), package(websocket.lwt), \
 	package(sqlite3), package(slacko), package(str), \
-	package(cmdliner), package(ptime)
+	package(cmdliner), package(ptime), package(irmin), \
+	package(irmin.unix), package(git.unix)
