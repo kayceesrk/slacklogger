@@ -1,7 +1,5 @@
 all:
-	ocamlbuild -pkgs lwt,cohttp,cohttp.lwt,ezjsonm,rresult,websocket \
-		-pkgs websocket.lwt,sqlite3,slacko,cmdliner,str slacklogger_app.native
+	ocaml pkg/pkg.ml build
 
 clean:
-	rm -f *~
-	ocamlbuild -clean
+	rm -rf _build slacklogger slacklogger.install

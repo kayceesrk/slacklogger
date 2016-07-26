@@ -1,0 +1,14 @@
+true : bin_annot, safe_string, package(bytes)
+
+<lib>: include
+
+<lib/slacklogger.{ml,mli}>: \
+	package(lwt), package(cohttp), package(cohttp.lwt), \
+	package(ezjsonm), package(websocket), package(websocket.lwt), \
+	package(sqlite3), package(slacko), package(str)
+
+<lib/slacklogger_app.*>: \
+	package(lwt), package(cohttp), package(cohttp.lwt), \
+	package(ezjsonm), package(websocket), package(websocket.lwt), \
+	package(sqlite3), package(slacko), package(str), \
+	package(cmdliner)
