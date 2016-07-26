@@ -20,7 +20,7 @@ depends: [
 	"cohttp.lwt"
 	"ezjsonm"
 	"websocket"
-  "websocket.lwt"
+	"websocket.lwt"
 	"sqlite3"
 	"slacko"
 	"str"
