@@ -34,17 +34,18 @@ let execute token db init_tables verbose query =
     | Some db_file ->
         let open Sqlite3 in
         let db = db_open db_file in
-        ignore @@ query_db db;
-        Lwt.return @@ ignore @@ db_close db
+        let json = query_db db in
+        Ezjsonm.to_channel ~minify:false stdout json;
+        Lwt.return ()
   else
   match token with
   | None -> failwith "Token is required for connecting to Slack."
   | Some token ->
-  get_websocket_uri token >>= fun uri ->
-  mk_rtm_stream ~uri >>= fun (stream, close) ->
+  get_rtm_uri token >>= fun uri ->
+  mk_rtm_stream ~uri >>= fun rtm_stream ->
   match db with
   | None ->
-      log_to_cmdline stream close
+      log_to_cmdline rtm_stream
   | Some db_file ->
       let open Sqlite3 in
       let db = db_open db_file in
@@ -53,7 +54,7 @@ let execute token db init_tables verbose query =
         with _ -> failwith "Database already has tables?"
       end;
       populate_db db ~token >>= fun () ->
-      log_to_db db stream close >|= fun () ->
+      log_to_db db rtm_stream >|= fun () ->
       ignore @@ db_close db
   end
 

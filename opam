@@ -24,6 +24,7 @@ depends: [
   "sqlite3"
   "slacko"
   "str"
+	"ptime"
 ]
 
 available: [ocaml-version >= "4.02.0"]

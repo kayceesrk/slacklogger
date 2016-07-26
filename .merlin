@@ -1,6 +1,6 @@
 S .
 S lib
-B _build
+B _build/lib
 PKG topkg
 PKG lwt
 PKG cohttp
@@ -12,3 +12,4 @@ PKG sqlite3
 PKG slacko
 PKG str
 PKG cmdliner
+PKG ptime

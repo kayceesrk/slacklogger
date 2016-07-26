@@ -1,8 +1,16 @@
 open Lwt.Infix
 
+type rtm_stream =
+  { msg_stream       : string Lwt_stream.t;
+    close_connection : unit -> unit; }
+
+type info =
+  {id   : string;
+   name : string}
+
 let section = Lwt_log.Section.make "slacklogger"
 
-let get_websocket_uri ~token =
+let get_rtm_uri ~token =
   let url = "https://slack.com/api/rtm.start?token=" ^ token in
   let open Ezjsonm in
   Cohttp_lwt_unix.Client.get (Uri.of_string url) >>= fun (resp, body) ->
@@ -24,7 +32,7 @@ let mk_rtm_stream ~uri =
   let open Frame in
 
   (* Stream for sending data to consumer *)
-  let data_stream, push_data = Lwt_stream.create () in
+  let msg_stream, push_data = Lwt_stream.create () in
 
   (* Stream for closing the connection *)
   let wait_for_close, close_connection =
@@ -81,12 +89,12 @@ let mk_rtm_stream ~uri =
       send @@ Frame.close 1000
   in
   Lwt.async (fun () -> close <?> react_forever ());
-  Lwt.return (data_stream, close_connection)
+  Lwt.return {msg_stream; close_connection}
 
-let rec log_to_cmdline stream close_connection =
+let rec log_to_cmdline {msg_stream; close_connection} =
   Lwt_io.printf "Logging Slack activity. Press Ctrl+d to quit\n%!" >>= fun () ->
   let rec react_forever () =
-    Lwt_stream.get stream >>= fun data ->
+    Lwt_stream.get msg_stream >>= fun data ->
     match data with
     | None -> Lwt.return @@ close_connection ()
     | Some data ->
@@ -102,10 +110,10 @@ let rec log_to_cmdline stream close_connection =
   in
   react_forever () <?> watch_stdin ()
 
-let rec log_to_db db stream close_connection =
+let rec log_to_db db {msg_stream; close_connection} =
   Lwt_io.printf "Logging Slack activity. Press Ctrl+d to quit\n%!" >>= fun () ->
   let rec react_forever () =
-    Lwt_stream.get stream >>= fun data ->
+    Lwt_stream.get msg_stream >>= fun data ->
     begin match data with
     | None -> Lwt.return @@ close_connection ()
     | Some data ->
@@ -215,10 +223,6 @@ let create_tables db =
     | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
   end
 
-type info =
-  {id   : string;
-   name : string}
-
 let get_channels_info, get_users_info =
   let fetch_info fetch_function kind token =
     let open Ezjsonm in
@@ -263,20 +267,19 @@ let query_db db =
                left join channels on messages.channel_id = channels.id \
                left join users on messages.user_id = users.id"
   in
-  print_string "[";
-  let first_done = ref false in
-  begin
-    match exec_no_headers db query ~cb:(fun row ->
-      match row with
-      | [| Some ts; Some channel; Some user; Some text |] ->
-          let json = Ezjsonm.(dict [("ts",string ts);("channel",string channel);
-                                    ("user",string user);("text",string text)])
-          in
-          if not !first_done then first_done := true else print_endline ",";
-          Ezjsonm.to_channel stdout json
-      | _ -> failwith "impossible");
-    with
-    | OK -> ()
-    | _ as e -> failwith (to_string e)
-  end;
-  print_endline "]"
+  let rows = ref [] in
+  match exec_no_headers db query ~cb:(function
+    | [| Some ts; Some channel; Some user; Some text |] ->
+        let hum_ts =
+          match Ptime.(int_of_string ts |> Span.of_int_s |> add_span epoch) with
+          | None -> failwith "impossible"
+          | Some t -> Format.asprintf "%a" Ptime.pp t
+        in
+        let json = Ezjsonm.(dict [("ts",string hum_ts);("channel",string channel);
+                                  ("user",string user);("text",string text)])
+        in
+        rows := json::!rows
+    | _ -> failwith "impossible")
+  with
+  | OK -> `A (List.rev !rows)
+  | _ as e -> failwith (to_string e)
