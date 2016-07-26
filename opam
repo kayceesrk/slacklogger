@@ -1,29 +1,29 @@
-opam-version: 	"1.2"
-maintainer: 		"kc@kcsrk.info"
-authors: 				["KC Sivaramakrishnan"]
-license:      	"ISC"
-homepage:     	"https://github.com/kayceesrk/slacklogger"
-bug-reports:  	"https://github.com/kayceesrk/slacklogger"
-dev-repo:     	"https://github.com/kayceesrk/slacklogger.git"
-doc:          	"https://slacklogger.github.io/"
+opam-version:   "1.2"
+maintainer:     "kc@kcsrk.info"
+authors:        ["KC Sivaramakrishnan"]
+license:        "ISC"
+homepage:       "https://github.com/kayceesrk/slacklogger"
+bug-reports:    "https://github.com/kayceesrk/slacklogger"
+dev-repo:       "https://github.com/kayceesrk/slacklogger.git"
+doc:            "https://slacklogger.github.io/"
 
 build: [
   "ocaml" "pkg/pkg.ml" "build" "--pinned" pinned
 ]
 
 depends: [
-	"ocamlfind"  {build}
-	"ocamlbuild" {build}
-	"topkg"      {build}
-	"lwt"
-	"cohttp",
-	"cohttp.lwt"
-	"ezjsonm"
-	"websocket"
-	"websocket.lwt"
-	"sqlite3"
-	"slacko"
-	"str"
+  "ocamlfind"       {build}
+  "ocamlbuild"      {build}
+  "topkg"           {build}
+  "lwt"
+  "cohttp",
+  "cohttp.lwt"
+  "ezjsonm"
+  "websocket"       {>=  "2.4"}
+  "websocket.lwt"
+  "sqlite3"
+  "slacko"
+  "str"
 ]
 
 available: [ocaml-version >= "4.02.0"]

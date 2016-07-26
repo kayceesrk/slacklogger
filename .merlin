@@ -1,0 +1,14 @@
+S .
+S lib
+B _build
+PKG topkg
+PKG lwt
+PKG cohttp
+PKG cohttp.lwt
+PKG ezjsonm
+PKG websocket
+PKG websocket.lwt
+PKG sqlite3
+PKG slacko
+PKG str
+PKG cmdliner
