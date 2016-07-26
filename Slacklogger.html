@@ -1,0 +1,120 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<link rel="Start" href="index.html">
+<link rel="Up" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Slacklogger" rel="Chapter" href="Slacklogger.html"><link title="Real Time Messaging Stream" rel="Section" href="#1_RealTimeMessagingStream">
+<link title="Database access" rel="Section" href="#1_Databaseaccess">
+<link title="Logging" rel="Section" href="#1_Logging">
+<title>Slacklogger</title>
+</head>
+<body>
+<div class="navbar">&nbsp;<a class="up" href="index.html" title="Index">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_Slacklogger.html">Slacklogger</a></h1>
+
+<pre><span class="keyword">module</span> Slacklogger: <code class="code"><span class="keyword">sig</span></code> <a href="Slacklogger.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
+Slacklogger<br>
+</div>
+<hr width="100%">
+<br>
+<h1 id="1_RealTimeMessagingStream">Real Time Messaging Stream</h1><br>
+
+<pre><span id="TYPErtm_stream"><span class="keyword">type</span> <code class="type"></code>rtm_stream</span> </pre>
+<div class="info ">
+The type of RTM stream.<br>
+</div>
+
+
+<pre><span id="VALget_rtm_uri"><span class="keyword">val</span> get_rtm_uri</span> : <code class="type">token:string -> Uri.t Lwt.t</code></pre><div class="info ">
+Fetch the RTM websocket URL.<br>
+</div>
+
+<pre><span id="VALmk_rtm_stream"><span class="keyword">val</span> mk_rtm_stream</span> : <code class="type">uri:Uri.t -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> Lwt.t</code></pre><div class="info ">
+Open an RTM stream for the given RTM websocket URL<br>
+</div>
+
+<pre><code><span id="TYPEinfo"><span class="keyword">type</span> <code class="type"></code>info</span> = {</code></pre><table class="typetable">
+<tr>
+<td align="left" valign="top" >
+<code>&nbsp;&nbsp;</code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTinfo.id">id</span>&nbsp;: <code class="type">string</code>;</code></td>
+
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code>&nbsp;&nbsp;</code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTinfo.name">name</span>&nbsp;: <code class="type">string</code>;</code></td>
+
+</tr></table>
+}
+
+
+
+<pre><span id="VALget_channels_info"><span class="keyword">val</span> get_channels_info</span> : <code class="type">token:string -> <a href="Slacklogger.html#TYPEinfo">info</a> list Lwt.t</code></pre><div class="info ">
+Fetch information for all the channels visible to the token.<br>
+</div>
+
+<pre><span id="VALget_users_info"><span class="keyword">val</span> get_users_info</span> : <code class="type">token:string -> <a href="Slacklogger.html#TYPEinfo">info</a> list Lwt.t</code></pre><div class="info ">
+Fetch information for all the users in the team.<br>
+</div>
+<br>
+<h1 id="1_Databaseaccess">Database access</h1><br>
+
+<pre><span id="VALcreate_tables"><span class="keyword">val</span> create_tables</span> : <code class="type">Sqlite3.db -> unit</code></pre><div class="info ">
+Create tables for storing the logs. The tables created are:
+<p>
+
+<pre class="codepre"><code class="code">&nbsp;&nbsp;<span class="constructor">TABLE</span>&nbsp;channels(
+&nbsp;&nbsp;&nbsp;&nbsp;id&nbsp;text&nbsp;primary&nbsp;key,
+&nbsp;&nbsp;&nbsp;&nbsp;name&nbsp;text);
+
+&nbsp;&nbsp;<span class="constructor">TABLE</span>&nbsp;users(
+&nbsp;&nbsp;&nbsp;&nbsp;id&nbsp;text&nbsp;primary&nbsp;key,
+&nbsp;&nbsp;&nbsp;&nbsp;name&nbsp;text);
+
+&nbsp;&nbsp;<span class="constructor">TABLE</span>&nbsp;messages(
+&nbsp;&nbsp;&nbsp;&nbsp;id&nbsp;integer,
+&nbsp;&nbsp;&nbsp;&nbsp;ts&nbsp;integer,
+&nbsp;&nbsp;&nbsp;&nbsp;msg&nbsp;text,
+&nbsp;&nbsp;&nbsp;&nbsp;channel_id&nbsp;text,
+&nbsp;&nbsp;&nbsp;&nbsp;user_id&nbsp;text,
+&nbsp;&nbsp;&nbsp;&nbsp;primary&nbsp;key&nbsp;(id,ts),
+&nbsp;&nbsp;&nbsp;&nbsp;foreign&nbsp;key(channel_id)&nbsp;references&nbsp;channels(id),
+&nbsp;&nbsp;&nbsp;&nbsp;foreign&nbsp;key(user_id)&nbsp;references&nbsp;users(id));
+</code></pre>
+<p>
+
+    Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables exist"</span></code> if the tables already exist.<br>
+</div>
+
+<pre><span id="VALpopulate_db"><span class="keyword">val</span> populate_db</span> : <code class="type">Sqlite3.db -> token:string -> unit Lwt.t</code></pre><div class="info ">
+Populate the <code class="code">channels</code> and <code class="code">messages</code> tables.
+    Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables absent"</span></code> if the tables do not exist.<br>
+</div>
+<br>
+<h1 id="1_Logging">Logging</h1><br>
+
+<pre><span id="VALlog_to_cmdline"><span class="keyword">val</span> log_to_cmdline</span> : <code class="type"><a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> -> unit Lwt.t</code></pre><div class="info ">
+Log to standard output. The function does not return. Terminating the
+    process closes the RTM stream.<br>
+</div>
+
+<pre><span id="VALlog_to_db"><span class="keyword">val</span> log_to_db</span> : <code class="type">Sqlite3.db -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> -> unit Lwt.t</code></pre><div class="info ">
+Log to database. The function does not return. Terminating the process
+    closes the RTM stream. It is expected that the database has tables with the
+    schema described in <a href="Slacklogger.html#VALcreate_tables"><code class="code"><span class="constructor">Slacklogger</span>.create_tables</code></a> and is populated with information about
+    channels and messages using <a href="Slacklogger.html#VALpopulate_db"><code class="code"><span class="constructor">Slacklogger</span>.populate_db</code></a>.<br>
+</div>
+
+<pre><span id="VALquery_db"><span class="keyword">val</span> query_db</span> : <code class="type">Sqlite3.db -> Ezjsonm.t</code></pre><div class="info ">
+Returns a human readable version of the message log.<br>
+</div>
+</body></html>
