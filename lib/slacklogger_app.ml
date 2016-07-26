@@ -43,8 +43,8 @@ let execute token db init_tables verbose query git =
   match token with
   | None -> failwith "Token is required for connecting to Slack."
   | Some token ->
-  get_rtm_uri token >>= fun uri ->
-  mk_rtm_stream ~uri >>= fun rtm_stream ->
+  rtm_uri_of_token token >>= fun uri ->
+  rtm_stream_of_rtm_uri ~uri >>= fun rtm_stream ->
   let init_db db_file =
     if init_tables then begin
       try create_tables db_file
