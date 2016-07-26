@@ -5,7 +5,7 @@ license:        "ISC"
 homepage:       "https://github.com/kayceesrk/slacklogger"
 bug-reports:    "https://github.com/kayceesrk/slacklogger"
 dev-repo:       "https://github.com/kayceesrk/slacklogger.git"
-doc:            "https://slacklogger.github.io/"
+doc:            "https://kayceesrk.github.io/slacklogger/"
 
 build: [
   "ocaml" "pkg/pkg.ml" "build" "--pinned" pinned
@@ -16,15 +16,14 @@ depends: [
   "ocamlbuild"      {build}
   "topkg"           {build}
   "lwt"
-  "cohttp",
-  "cohttp.lwt"
+  "cohttp"
   "ezjsonm"
   "websocket"       {>=  "2.4"}
-  "websocket.lwt"
   "sqlite3"
   "slacko"
   "str"
 	"ptime"
+	"cmdliner"
 ]
 
 available: [ocaml-version >= "4.02.0"]
