@@ -17,18 +17,15 @@ depends: [
   "topkg"           {build}
   "lwt"
   "cohttp"
-  "cohttp.lwt"
   "ezjsonm"
   "websocket"       {>=  "2.4"}
-  "websocket.lwt"
   "sqlite3"
   "slacko"
   "str"
   "ptime"
   "cmdliner"
   "irmin"
-  "irmin.unix"
-	"git.unix"
+	"git"
 ]
 
 available: [ocaml-version >= "4.02.0"]
