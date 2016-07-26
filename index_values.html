@@ -25,11 +25,6 @@ Create tables for storing the logs.
 Fetch information for all the channels visible to the token.
 </div>
 </td></tr>
-<tr><td><a href="Slacklogger.html#VALget_rtm_uri">get_rtm_uri</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
-<td><div class="info">
-Fetch the RTM websocket URL.
-</div>
-</td></tr>
 <tr><td><a href="Slacklogger.html#VALget_users_info">get_users_info</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
 <td><div class="info">
 Fetch information for all the users in the team.
@@ -46,22 +41,28 @@ Log to standard output.
 Log to database.
 </div>
 </td></tr>
-<tr><td align="left"><br>M</td></tr>
-<tr><td><a href="Slacklogger.html#VALmk_rtm_stream">mk_rtm_stream</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
-<td><div class="info">
-Open an RTM stream for the given RTM websocket URL
-</div>
-</td></tr>
 <tr><td align="left"><br>P</td></tr>
 <tr><td><a href="Slacklogger.html#VALpopulate_db">populate_db</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
 <td><div class="info">
-Populate the <code class="code">channels</code> and <code class="code">messages</code> tables.
+Populate the <code class="code">channels</code> and <code class="code">messages</code> tables with already existing
+    information.
 </div>
 </td></tr>
 <tr><td align="left"><br>Q</td></tr>
 <tr><td><a href="Slacklogger.html#VALquery_db">query_db</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
 <td><div class="info">
 Returns a human readable version of the message log.
+</div>
+</td></tr>
+<tr><td align="left"><br>R</td></tr>
+<tr><td><a href="Slacklogger.html#VALrtm_stream_of_rtm_uri">rtm_stream_of_rtm_uri</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
+<td><div class="info">
+Open an RTM stream for the given RTM websocket URI
+</div>
+</td></tr>
+<tr><td><a href="Slacklogger.html#VALrtm_uri_of_token">rtm_uri_of_token</a> [<a href="Slacklogger.html">Slacklogger</a>]</td>
+<td><div class="info">
+Fetch the RTM websocket URI.
 </div>
 </td></tr>
 </table>

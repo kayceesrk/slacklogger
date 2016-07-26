@@ -19,7 +19,11 @@
 <h1>Module <a href="type_Slacklogger.html">Slacklogger</a></h1>
 
 <pre><span class="keyword">module</span> Slacklogger: <code class="code"><span class="keyword">sig</span></code> <a href="Slacklogger.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
-Slacklogger<br>
+Slacklogger
+<p>
+
+    Log and query Slack conversations using the Real Time Messaging (RTM) API.
+    The logs are stored in a version controlled SQLite database.<br>
 </div>
 <hr width="100%">
 <br>
@@ -31,12 +35,12 @@ The type of RTM stream.<br>
 </div>
 
 
-<pre><span id="VALget_rtm_uri"><span class="keyword">val</span> get_rtm_uri</span> : <code class="type">token:string -> Uri.t Lwt.t</code></pre><div class="info ">
-Fetch the RTM websocket URL.<br>
+<pre><span id="VALrtm_uri_of_token"><span class="keyword">val</span> rtm_uri_of_token</span> : <code class="type">token:string -> Uri.t Lwt.t</code></pre><div class="info ">
+Fetch the RTM websocket URI.<br>
 </div>
 
-<pre><span id="VALmk_rtm_stream"><span class="keyword">val</span> mk_rtm_stream</span> : <code class="type">uri:Uri.t -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> Lwt.t</code></pre><div class="info ">
-Open an RTM stream for the given RTM websocket URL<br>
+<pre><span id="VALrtm_stream_of_rtm_uri"><span class="keyword">val</span> rtm_stream_of_rtm_uri</span> : <code class="type">uri:Uri.t -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> Lwt.t</code></pre><div class="info ">
+Open an RTM stream for the given RTM websocket URI<br>
 </div>
 
 <pre><code><span id="TYPEinfo"><span class="keyword">type</span> <code class="type"></code>info</span> = {</code></pre><table class="typetable">
@@ -68,7 +72,7 @@ Fetch information for all the users in the team.<br>
 <br>
 <h1 id="1_Databaseaccess">Database access</h1><br>
 
-<pre><span id="VALcreate_tables"><span class="keyword">val</span> create_tables</span> : <code class="type">Sqlite3.db -> unit</code></pre><div class="info ">
+<pre><span id="VALcreate_tables"><span class="keyword">val</span> create_tables</span> : <code class="type">database:string -> unit</code></pre><div class="info ">
 Create tables for storing the logs. The tables created are:
 <p>
 
@@ -95,26 +99,38 @@ Create tables for storing the logs. The tables created are:
     Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables exist"</span></code> if the tables already exist.<br>
 </div>
 
-<pre><span id="VALpopulate_db"><span class="keyword">val</span> populate_db</span> : <code class="type">Sqlite3.db -> token:string -> unit Lwt.t</code></pre><div class="info ">
-Populate the <code class="code">channels</code> and <code class="code">messages</code> tables.
-    Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables absent"</span></code> if the tables do not exist.<br>
+<pre><span id="VALpopulate_db"><span class="keyword">val</span> populate_db</span> : <code class="type">database:string -> token:string -> unit Lwt.t</code></pre><div class="info ">
+Populate the <code class="code">channels</code> and <code class="code">messages</code> tables with already existing
+    information. Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables absent"</span></code> if the tables do not exist.<br>
 </div>
 <br>
 <h1 id="1_Logging">Logging</h1><br>
 
 <pre><span id="VALlog_to_cmdline"><span class="keyword">val</span> log_to_cmdline</span> : <code class="type"><a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> -> unit Lwt.t</code></pre><div class="info ">
-Log to standard output. The function does not return. Terminating the
-    process closes the RTM stream.<br>
+Log to standard output.<br>
 </div>
 
-<pre><span id="VALlog_to_db"><span class="keyword">val</span> log_to_db</span> : <code class="type">Sqlite3.db -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> -> unit Lwt.t</code></pre><div class="info ">
-Log to database. The function does not return. Terminating the process
-    closes the RTM stream. It is expected that the database has tables with the
-    schema described in <a href="Slacklogger.html#VALcreate_tables"><code class="code"><span class="constructor">Slacklogger</span>.create_tables</code></a> and is populated with information about
-    channels and messages using <a href="Slacklogger.html#VALpopulate_db"><code class="code"><span class="constructor">Slacklogger</span>.populate_db</code></a>.<br>
+<pre><span id="VALlog_to_db"><span class="keyword">val</span> log_to_db</span> : <code class="type">[ `Database of string | `Git of string ] -><br>       <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> -> unit Lwt.t</code></pre><div class="info ">
+Log to database. The database can either be a stand-alone SQLite database
+    file or a git repository. In the former case, the first argument is
+    <code class="code"><span class="keywordsign">`</span><span class="constructor">Database</span> path</code> where <code class="code">path</code> is the path to the SQLite database on the
+    local file system.
+<p>
+
+    In the latter case, the first argument is <code class="code"><span class="keywordsign">`</span><span class="constructor">Git</span> repo</code>, where the <code class="code">repo</code> is
+    the location of the git repository in the local file system. The function
+    attempts to read the SQLite database file named <code class="code">db</code> at the root of the
+    git repository. with each incoming message, the database is updated and the
+    new state is committed into the master branch of the repository.
+<p>
+
+    In either case, if the database does not exist, then it is created. It is
+    expected that the database has tables with the schema described in
+    <a href="Slacklogger.html#VALcreate_tables"><code class="code"><span class="constructor">Slacklogger</span>.create_tables</code></a> and is populated with information about channels and
+    messages using <a href="Slacklogger.html#VALpopulate_db"><code class="code"><span class="constructor">Slacklogger</span>.populate_db</code></a>.<br>
 </div>
 
-<pre><span id="VALquery_db"><span class="keyword">val</span> query_db</span> : <code class="type">Sqlite3.db -> Ezjsonm.t</code></pre><div class="info ">
+<pre><span id="VALquery_db"><span class="keyword">val</span> query_db</span> : <code class="type">database:string -> Ezjsonm.t</code></pre><div class="info ">
 Returns a human readable version of the message log.<br>
 </div>
 </body></html>
