@@ -10,13 +10,8 @@
 <body>
 <code class="code"><span class="keyword">sig</span>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;rtm_stream
-&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;rtm_uri_of_token&nbsp;:&nbsp;token:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Uri</span>.t&nbsp;<span class="constructor">Lwt</span>.t
-&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;rtm_stream_of_rtm_uri&nbsp;:&nbsp;uri:<span class="constructor">Uri</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Slacklogger</span>.rtm_stream&nbsp;<span class="constructor">Lwt</span>.t
-&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;info&nbsp;=&nbsp;{&nbsp;id&nbsp;:&nbsp;string;&nbsp;name&nbsp;:&nbsp;string;&nbsp;}
-&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;get_channels_info&nbsp;:&nbsp;token:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Slacklogger</span>.info&nbsp;list&nbsp;<span class="constructor">Lwt</span>.t
-&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;get_users_info&nbsp;:&nbsp;token:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Slacklogger</span>.info&nbsp;list&nbsp;<span class="constructor">Lwt</span>.t
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;stream_of_token&nbsp;:&nbsp;token:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Slacklogger</span>.rtm_stream&nbsp;<span class="constructor">Lwt</span>.t
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;create_tables&nbsp;:&nbsp;database:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit
-&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;populate_db&nbsp;:&nbsp;database:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;token:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Lwt</span>.t
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;log_to_cmdline&nbsp;:&nbsp;<span class="constructor">Slacklogger</span>.rtm_stream&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Lwt</span>.t
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;log_to_db&nbsp;:
 &nbsp;&nbsp;&nbsp;&nbsp;[&nbsp;<span class="keywordsign">`</span><span class="constructor">Database</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Git</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;]&nbsp;<span class="keywordsign">-&gt;</span>

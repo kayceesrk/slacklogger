@@ -11,6 +11,7 @@
 <link title="Slacklogger" rel="Chapter" href="Slacklogger.html"><link title="Real Time Messaging Stream" rel="Section" href="#1_RealTimeMessagingStream">
 <link title="Database access" rel="Section" href="#1_Databaseaccess">
 <link title="Logging" rel="Section" href="#1_Logging">
+<link title="Query" rel="Section" href="#1_Query">
 <title>Slacklogger</title>
 </head>
 <body>
@@ -35,39 +36,8 @@ The type of RTM stream.<br>
 </div>
 
 
-<pre><span id="VALrtm_uri_of_token"><span class="keyword">val</span> rtm_uri_of_token</span> : <code class="type">token:string -> Uri.t Lwt.t</code></pre><div class="info ">
-Fetch the RTM websocket URI.<br>
-</div>
-
-<pre><span id="VALrtm_stream_of_rtm_uri"><span class="keyword">val</span> rtm_stream_of_rtm_uri</span> : <code class="type">uri:Uri.t -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> Lwt.t</code></pre><div class="info ">
-Open an RTM stream for the given RTM websocket URI<br>
-</div>
-
-<pre><code><span id="TYPEinfo"><span class="keyword">type</span> <code class="type"></code>info</span> = {</code></pre><table class="typetable">
-<tr>
-<td align="left" valign="top" >
-<code>&nbsp;&nbsp;</code></td>
-<td align="left" valign="top" >
-<code><span id="TYPEELTinfo.id">id</span>&nbsp;: <code class="type">string</code>;</code></td>
-
-</tr>
-<tr>
-<td align="left" valign="top" >
-<code>&nbsp;&nbsp;</code></td>
-<td align="left" valign="top" >
-<code><span id="TYPEELTinfo.name">name</span>&nbsp;: <code class="type">string</code>;</code></td>
-
-</tr></table>
-}
-
-
-
-<pre><span id="VALget_channels_info"><span class="keyword">val</span> get_channels_info</span> : <code class="type">token:string -> <a href="Slacklogger.html#TYPEinfo">info</a> list Lwt.t</code></pre><div class="info ">
-Fetch information for all the channels visible to the token.<br>
-</div>
-
-<pre><span id="VALget_users_info"><span class="keyword">val</span> get_users_info</span> : <code class="type">token:string -> <a href="Slacklogger.html#TYPEinfo">info</a> list Lwt.t</code></pre><div class="info ">
-Fetch information for all the users in the team.<br>
+<pre><span id="VALstream_of_token"><span class="keyword">val</span> stream_of_token</span> : <code class="type">token:string -> <a href="Slacklogger.html#TYPErtm_stream">rtm_stream</a> Lwt.t</code></pre><div class="info ">
+Open RTM stream.<br>
 </div>
 <br>
 <h1 id="1_Databaseaccess">Database access</h1><br>
@@ -98,11 +68,6 @@ Create tables for storing the logs. The tables created are:
 
     Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables exist"</span></code> if the tables already exist.<br>
 </div>
-
-<pre><span id="VALpopulate_db"><span class="keyword">val</span> populate_db</span> : <code class="type">database:string -> token:string -> unit Lwt.t</code></pre><div class="info ">
-Populate the <code class="code">channels</code> and <code class="code">messages</code> tables with already existing
-    information. Raise <code class="code"><span class="constructor">Failure</span> <span class="string">"Tables absent"</span></code> if the tables do not exist.<br>
-</div>
 <br>
 <h1 id="1_Logging">Logging</h1><br>
 
@@ -127,8 +92,10 @@ Log to database. The database can either be a stand-alone SQLite database
     In either case, if the database does not exist, then it is created. It is
     expected that the database has tables with the schema described in
     <a href="Slacklogger.html#VALcreate_tables"><code class="code"><span class="constructor">Slacklogger</span>.create_tables</code></a> and is populated with information about channels and
-    messages using <a href="Slacklogger.html#VALpopulate_db"><code class="code"><span class="constructor">Slacklogger</span>.populate_db</code></a>.<br>
+    messages using <code class="code">populate_db</code>.<br>
 </div>
+<br>
+<h1 id="1_Query">Query</h1><br>
 
 <pre><span id="VALquery_db"><span class="keyword">val</span> query_db</span> : <code class="type">database:string -> Ezjsonm.t</code></pre><div class="info ">
 Returns a human readable version of the message log.<br>
