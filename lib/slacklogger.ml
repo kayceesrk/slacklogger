@@ -161,8 +161,13 @@ let create_tables ~database =
     | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
   end
 
-let get_channels_info, get_users_info =
-  let fetch_info fetch_function kind token =
+
+
+let populate_db ~token db =
+  let open Sqlite3 in
+  let open Sqlite3.Rc in
+
+  let fetch_info fetch_function kind =
     let open Ezjsonm in
     let token = Slacko.token_of_string token in
     fetch_function token >|= fun result ->
@@ -176,29 +181,28 @@ let get_channels_info, get_users_info =
           in {id; name}) (find json [kind])
     | _ -> failwith "populate_channels_and_users: channels_list"
   in
-  (fun ~token -> fetch_info Slacko.channels_list "channels" token),
-  (fun ~token -> fetch_info Slacko.users_list "members" token)
 
-let populate_db ~database ~token =
-  let open Sqlite3 in
-  let open Sqlite3.Rc in
-  let db = db_open database in
+  fetch_info Slacko.channels_list "channels" >>= fun channels_info ->
+  List.iter (fun {id; name} ->
+  let query = Printf.sprintf "INSERT INTO channels VALUES (\"%s\",\"%s\")" id name in
+  match exec db query with
+  | OK | CONSTRAINT -> ()
+  | _ as e -> failwith @@ "populate channels failed: " ^ to_string e) channels_info;
 
-  get_channels_info token >>= fun channels_info ->
-    List.iter (fun {id; name} ->
-    let query = Printf.sprintf "INSERT INTO channels VALUES (\"%s\",\"%s\")" id name in
-    match exec db query with
-    | OK | CONSTRAINT -> ()
-    | _ as e -> failwith @@ "populate channels failed: " ^ to_string e) channels_info;
+  fetch_info Slacko.groups_list "groups" >>= fun channels_info ->
+  List.iter (fun {id; name} ->
+  let query = Printf.sprintf "INSERT INTO channels VALUES (\"%s\",\"%s\")" id name in
+  match exec db query with
+  | OK | CONSTRAINT -> ()
+  | _ as e -> failwith @@ "populate groups failed: " ^ to_string e) channels_info;
 
-  get_users_info token >|= fun users_info ->
-    List.iter (fun {id; name} ->
-    let query = Printf.sprintf "INSERT INTO users VALUES (\"%s\",\"%s\")" id name in
-    match exec db query with
-    | OK | CONSTRAINT -> ()
-    | _ as e -> failwith @@ "populate users failed: " ^ to_string e) users_info;
 
-  ignore @@ db_close db
+  fetch_info Slacko.users_list "members" >|= fun users_info ->
+  List.iter (fun {id; name} ->
+  let query = Printf.sprintf "INSERT INTO users VALUES (\"%s\",\"%s\")" id name in
+  match exec db query with
+  | OK | CONSTRAINT -> ()
+  | _ as e -> failwith @@ "populate users failed: " ^ to_string e) users_info
 
 let rec log_to_db git_or_db {msg_stream; close_connection; token} =
   let channels_map = Hashtbl.create 17 in
@@ -210,13 +214,13 @@ let rec log_to_db git_or_db {msg_stream; close_connection; token} =
     | `Database db_file -> db_file
   in
 
-  let init_hashtbls () =
+  let load_hashtbls () =
     let open Sqlite3 in
     let open Sqlite3.Rc in
     let db = db_open db_file in
 
     begin match exec_no_headers db "select * from channels" ~cb:(function
-      | [| Some id; Some name |] -> Hashtbl.add channels_map id name
+      | [| Some id; Some name |] -> Hashtbl.replace channels_map id name
       | _ -> failwith "impossible")
     with
     | OK -> ()
@@ -224,11 +228,22 @@ let rec log_to_db git_or_db {msg_stream; close_connection; token} =
     end;
 
     match exec_no_headers db "select * from users" ~cb:(function
-      | [| Some id; Some name |] -> Hashtbl.add users_map id name
+      | [| Some id; Some name |] -> Hashtbl.replace users_map id name
       | _ -> failwith "impossible")
     with
     | OK -> ()
     | _ as e -> failwith @@ "select from users failed: " ^ to_string e
+  in
+
+  let rec resolve_channel_user db ~channel_id ~user_id =
+    try
+      let user = Hashtbl.find users_map user_id in
+      let channel = Hashtbl.find channels_map channel_id in
+      Lwt.return (channel,user)
+    with Not_found ->
+      populate_db db ~token >>= fun () ->
+      load_hashtbls ();
+      resolve_channel_user db channel_id user_id
   in
 
   let git_commit commit_msg = function
@@ -254,6 +269,7 @@ let rec log_to_db git_or_db {msg_stream; close_connection; token} =
         close_connection ();
         Lwt.fail Exit
     | Some data ->
+      Lwt_log.debug_f "react_loop: Received message: %s\n" data >>= fun () ->
       let json = from_string data in
       let typ = get_string @@ find json ["type"] in
 
@@ -277,50 +293,14 @@ let rec log_to_db git_or_db {msg_stream; close_connection; token} =
           in
           begin match exec db q with
           | OK ->
-              let user = Hashtbl.find users_map user_id in
+              resolve_channel_user db channel_id user_id >>= fun (channel, user) ->
               let hum_ts = human_of_timestamp ts in
-              let channel = Hashtbl.find channels_map channel_id in
               let fmt_msg = Printf.sprintf "message | %s on %s in %s\n%s"
                               user hum_ts channel text
               in
               git_commit fmt_msg store >>= fun () ->
               Lwt_log.info ~section q
           | _ as e -> failwith @@ "insert into messages failed: " ^ to_string e
-          end
-
-      | "channel_created" ->
-          let channel_id = get_string @@ find json ["channel"; "id"] in
-          let channel_name = get_string @@ find json ["channel"; "name"] in
-          let q =
-            Printf.sprintf
-              "insert into channels values (\"%s\",\"%s\")"
-              channel_id channel_name
-          in
-          begin match exec db q with
-          | OK ->
-              Hashtbl.add channels_map channel_id channel_name;
-              let fmt_msg = Printf.sprintf "channel created | %s" channel_name
-              in
-              git_commit fmt_msg store >>= fun () ->
-              Lwt_log.info ~section q
-          | _ -> failwith "insert into channels failed"
-          end
-
-      | "team_join" ->
-          let user_id = get_string @@ find json ["user"; "id"] in
-          let user_name = get_string @@ find json ["user"; "name"] in
-          let q =
-            Printf.sprintf
-              "insert into users values (\"%s\",\"%s\")"
-              user_id user_name
-          in
-          begin match exec db q with
-          | OK ->
-              Hashtbl.add users_map user_id user_name;
-              let fmt_msg = Printf.sprintf "user joined | %s" user_name in
-              git_commit fmt_msg store >>= fun () ->
-              Lwt_log.info ~section q
-          | _ -> failwith "insert into users failed"
           end
 
       (* Ignore all other messages for now *)
@@ -339,8 +319,10 @@ let rec log_to_db git_or_db {msg_stream; close_connection; token} =
   in
 
   (* Main *)
-  populate_db ~database:db_file ~token >>= fun () ->
-  init_hashtbls();
+  let db = Sqlite3.db_open db_file in
+  populate_db ~token db >>= fun () ->
+  ignore @@ Sqlite3.db_close db;
+  load_hashtbls();
   begin
     match git_or_db with
     | `Database _ -> Lwt.return None

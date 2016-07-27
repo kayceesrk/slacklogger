@@ -31,7 +31,7 @@ let info =
 let execute token db init_tables verbose query git =
   let open Slacklogger in
   Lwt_main.run begin
-  if verbose then Lwt_log.add_rule "*" Lwt_log.Info;
+  if verbose then Lwt_log.add_rule "*" Lwt_log.Debug;
   if query then
     match db with
     | None -> failwith "Database file required for querying!"
