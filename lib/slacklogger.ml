@@ -2,7 +2,8 @@ open Lwt.Infix
 
 type rtm_stream =
   { msg_stream       : string Lwt_stream.t;
-    close_connection : unit -> unit; }
+    close_connection : unit -> unit;
+    token            : string }
 
 type info =
   {id   : string;
@@ -15,26 +16,27 @@ let human_of_timestamp ts =
   | None -> failwith "impossible"
   | Some t -> Format.asprintf "%a" Ptime.pp t
 
-let rtm_uri_of_token ~token =
+let stream_of_token ~token =
   let url = "https://slack.com/api/rtm.start?token=" ^ token in
   let open Ezjsonm in
+  let open Websocket_lwt in
+  let open Frame in
+
+  (* Fetch the websocket uri *)
   Cohttp_lwt_unix.Client.get (Uri.of_string url) >>= fun (resp, body) ->
   let code = resp |> Cohttp.Response.status |> Cohttp.Code.code_of_status in
   Lwt_log.debug_f ~section "rtm_start: Response code: %d\n" code >>= fun () ->
   body |> Cohttp_lwt_body.to_string >>= fun body ->
   Lwt_log.debug_f ~section "rtm_start: Body of length: %d\n" (String.length body) >>= fun () ->
   let json = from_string body in
-  if not (get_bool (find json ["ok"])) then
-    failwith "rtm.start: unexpected response"
-  else
-    let uri_str = get_string (find json ["url"]) in
-    Lwt_log.debug_f ~section "get_ws_uri: uri=%s\n" uri_str >|= fun () ->
-    Uri.of_string uri_str
-
-let rtm_stream_of_rtm_uri ~uri =
-  let open Lwt.Infix in
-  let open Websocket_lwt in
-  let open Frame in
+  begin
+    if not (get_bool (find json ["ok"])) then
+      failwith "rtm.start: unexpected response"
+    else
+      let uri_str = get_string (find json ["url"]) in
+      Lwt_log.debug_f ~section "get_ws_uri: uri=%s\n" uri_str >|= fun () ->
+      Uri.of_string uri_str
+  end >>= fun uri ->
 
   (* Stream for sending data to consumer *)
   let msg_stream, push_data = Lwt_stream.create () in
@@ -45,13 +47,13 @@ let rtm_stream_of_rtm_uri ~uri =
     (Lwt_stream.get close_stream, fun () -> push_close None)
   in
 
+  (* See: https://github.com/vbmithr/ocaml-websocket/issues/59 *)
   let https_uri =
     match Uri.scheme uri with
     | Some "wss" -> Uri.with_scheme uri (Some "https")
     | Some "ws" -> Uri.with_scheme uri (Some "http")
     | _ -> uri
   in
-  (* See: https://github.com/vbmithr/ocaml-websocket/issues/59 *)
 
   Resolver_lwt.resolve_uri ~uri:https_uri Resolver_lwt_unix.system >>= fun endp ->
   Conduit_lwt_unix.(endp_to_client ~ctx:default_ctx endp >>= fun client ->
@@ -94,9 +96,9 @@ let rtm_stream_of_rtm_uri ~uri =
       send @@ Frame.close 1000
   in
   Lwt.async (fun () -> close <?> react_forever ());
-  Lwt.return {msg_stream; close_connection}
+  Lwt.return {msg_stream; close_connection; token}
 
-let rec log_to_cmdline {msg_stream; close_connection} =
+let rec log_to_cmdline {msg_stream; close_connection; _} =
   Lwt_io.printf "Logging Slack activity. Press Ctrl+d to quit\n%!" >>= fun () ->
   let rec react_forever () =
     Lwt_stream.get msg_stream >>= fun data ->
@@ -121,7 +123,84 @@ module Store = Irmin_git.FS(Irmin.Contents.Cstruct)(Irmin.Ref.String)(Irmin.Hash
 module View = Irmin.View(Store)
 module IO = Git_unix.FS.IO
 
-let rec log_to_db git_or_db {msg_stream; close_connection} =
+let create_tables ~database =
+  let open Sqlite3 in
+  let open Sqlite3.Rc in
+
+  let db = db_open database in
+  begin
+    match exec db "CREATE TABLE channels( \
+                     id text primary key, \
+                     name text)"
+    with
+    | OK -> ()
+    | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
+  end;
+
+  begin
+    match exec db "CREATE TABLE users( \
+                     id text primary key, \
+                     name text)"
+    with
+    | OK -> ()
+    | _ as e -> failwith @@ "create table users failed: " ^ to_string e
+  end;
+
+  begin
+    match exec db "CREATE TABLE messages(
+                     id integer,
+                     ts integer,
+                     msg text,
+                     channel_id text,
+                     user_id text,
+                     primary key (id,ts),
+                     foreign key(channel_id) references channels(id),
+                     foreign key(user_id) references users(id));"
+    with
+    | OK -> ignore @@ db_close db
+    | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
+  end
+
+let get_channels_info, get_users_info =
+  let fetch_info fetch_function kind token =
+    let open Ezjsonm in
+    let token = Slacko.token_of_string token in
+    fetch_function token >|= fun result ->
+    match result with
+    | `Success json ->
+        let json_string = Yojson.Basic.to_string json in
+        let json = from_string json_string in
+        get_list (fun j ->
+          let id = get_string (find j ["id"]) in
+          let name = get_string (find j ["name"])
+          in {id; name}) (find json [kind])
+    | _ -> failwith "populate_channels_and_users: channels_list"
+  in
+  (fun ~token -> fetch_info Slacko.channels_list "channels" token),
+  (fun ~token -> fetch_info Slacko.users_list "members" token)
+
+let populate_db ~database ~token =
+  let open Sqlite3 in
+  let open Sqlite3.Rc in
+  let db = db_open database in
+
+  get_channels_info token >>= fun channels_info ->
+    List.iter (fun {id; name} ->
+    let query = Printf.sprintf "INSERT INTO channels VALUES (\"%s\",\"%s\")" id name in
+    match exec db query with
+    | OK | CONSTRAINT -> ()
+    | _ as e -> failwith @@ "populate channels failed: " ^ to_string e) channels_info;
+
+  get_users_info token >|= fun users_info ->
+    List.iter (fun {id; name} ->
+    let query = Printf.sprintf "INSERT INTO users VALUES (\"%s\",\"%s\")" id name in
+    match exec db query with
+    | OK | CONSTRAINT -> ()
+    | _ as e -> failwith @@ "populate users failed: " ^ to_string e) users_info;
+
+  ignore @@ db_close db
+
+let rec log_to_db git_or_db {msg_stream; close_connection; token} =
   let channels_map = Hashtbl.create 17 in
   let users_map = Hashtbl.create 17 in
 
@@ -151,7 +230,6 @@ let rec log_to_db git_or_db {msg_stream; close_connection} =
     | OK -> ()
     | _ as e -> failwith @@ "select from users failed: " ^ to_string e
   in
-  init_hashtbls ();
 
   let git_commit commit_msg = function
     | None -> Lwt.return ()
@@ -260,6 +338,9 @@ let rec log_to_db git_or_db {msg_stream; close_connection} =
     | Some content -> watch_stdin ()
   in
 
+  (* Main *)
+  populate_db ~database:db_file ~token >>= fun () ->
+  init_hashtbls();
   begin
     match git_or_db with
     | `Database _ -> Lwt.return None
@@ -270,82 +351,6 @@ let rec log_to_db git_or_db {msg_stream; close_connection} =
   end >>= fun store ->
   (react_forever store) <?> watch_stdin ()
 
-let create_tables ~database =
-  let open Sqlite3 in
-  let open Sqlite3.Rc in
-
-  let db = db_open database in
-  begin
-    match exec db "CREATE TABLE channels( \
-                     id text primary key, \
-                     name text)"
-    with
-    | OK -> ()
-    | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
-  end;
-
-  begin
-    match exec db "CREATE TABLE users( \
-                     id text primary key, \
-                     name text)"
-    with
-    | OK -> ()
-    | _ as e -> failwith @@ "create table users failed: " ^ to_string e
-  end;
-
-  begin
-    match exec db "CREATE TABLE messages(
-                     id integer,
-                     ts integer,
-                     msg text,
-                     channel_id text,
-                     user_id text,
-                     primary key (id,ts),
-                     foreign key(channel_id) references channels(id),
-                     foreign key(user_id) references users(id));"
-    with
-    | OK -> ignore @@ db_close db
-    | _ as e -> failwith @@ "create table channels failed: " ^ to_string e
-  end
-
-let get_channels_info, get_users_info =
-  let fetch_info fetch_function kind token =
-    let open Ezjsonm in
-    let token = Slacko.token_of_string token in
-    fetch_function token >|= fun result ->
-    match result with
-    | `Success json ->
-        let json_string = Yojson.Basic.to_string json in
-        let json = from_string json_string in
-        get_list (fun j ->
-          let id = get_string (find j ["id"]) in
-          let name = get_string (find j ["name"])
-          in {id; name}) (find json [kind])
-    | _ -> failwith "populate_channels_and_users: channels_list"
-  in
-  (fun ~token -> fetch_info Slacko.channels_list "channels" token),
-  (fun ~token -> fetch_info Slacko.users_list "members" token)
-
-let populate_db ~database ~token =
-  let open Sqlite3 in
-  let open Sqlite3.Rc in
-  let db = db_open database in
-
-  get_channels_info token >>= fun channels_info ->
-    List.iter (fun {id; name} ->
-    let query = Printf.sprintf "INSERT INTO channels VALUES (\"%s\",\"%s\")" id name in
-    match exec db query with
-    | OK | CONSTRAINT -> ()
-    | _ as e -> failwith @@ "populate channels failed: " ^ to_string e) channels_info;
-
-  get_users_info token >|= fun users_info ->
-    List.iter (fun {id; name} ->
-    let query = Printf.sprintf "INSERT INTO users VALUES (\"%s\",\"%s\")" id name in
-    match exec db query with
-    | OK | CONSTRAINT -> ()
-    | _ as e -> failwith @@ "populate users failed: " ^ to_string e) users_info;
-
-  ignore @@ db_close db
 
 let query_db ~database =
   let open Sqlite3 in

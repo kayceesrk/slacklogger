@@ -9,21 +9,8 @@
 type rtm_stream
 (** The type of RTM stream. *)
 
-val rtm_uri_of_token: token:string -> Uri.t Lwt.t
-(** Fetch the RTM websocket URI. *)
-
-val rtm_stream_of_rtm_uri: uri:Uri.t -> rtm_stream Lwt.t
-(** Open an RTM stream for the given RTM websocket URI *)
-
-type info =
-  { id : string;
-    name : string; }
-
-val get_channels_info : token:string -> info list Lwt.t
-(** Fetch information for all the channels visible to the token. *)
-
-val get_users_info : token:string -> info list Lwt.t
-(** Fetch information for all the users in the team. *)
+val stream_of_token: token:string -> rtm_stream Lwt.t
+(** Open RTM stream. *)
 
 (** {1 Database access} *)
 
@@ -52,10 +39,6 @@ val create_tables : database:string -> unit
 
     Raise [Failure "Tables exist"] if the tables already exist. *)
 
-val populate_db : database:string -> token:string -> unit Lwt.t
-(** Populate the [channels] and [messages] tables with already existing
-    information. Raise [Failure "Tables absent"] if the tables do not exist. *)
-
 (** {1 Logging} *)
 
 val log_to_cmdline : rtm_stream -> unit Lwt.t
@@ -77,6 +60,8 @@ val log_to_db : [`Git of string | `Database of string] -> rtm_stream -> unit Lwt
     expected that the database has tables with the schema described in
     {!create_tables} and is populated with information about channels and
     messages using {!populate_db}. *)
+
+(** {1 Query} *)
 
 val query_db : database:string -> Ezjsonm.t
 (** Returns a human readable version of the message log. *)

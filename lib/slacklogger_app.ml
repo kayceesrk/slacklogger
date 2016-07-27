@@ -43,28 +43,24 @@ let execute token db init_tables verbose query git =
   match token with
   | None -> failwith "Token is required for connecting to Slack."
   | Some token ->
-  rtm_uri_of_token token >>= fun uri ->
-  rtm_stream_of_rtm_uri ~uri >>= fun rtm_stream ->
+  stream_of_token token >>= fun rtm_stream ->
   let init_db db_file =
-    if init_tables then begin
+    if init_tables then
       try create_tables db_file
       with _ -> failwith "Database already has tables?"
-    end;
-    populate_db ~database:db_file ~token >>= fun () ->
-    Lwt.return ()
   in
   match db with
   | Some db_file ->
-      init_db db_file >>= fun () ->
+      init_db db_file;
       log_to_db (`Database db_file) rtm_stream
   | None ->
-   begin match git with
-     | Some git_repo ->
-         let db_file = Filename.concat git_repo "db" in
-         init_db db_file >>= fun () ->
-         log_to_db (`Git git_repo) rtm_stream
-     | None -> log_to_cmdline rtm_stream
-   end
+      begin match git with
+        | Some git_repo ->
+            let db_file = Filename.concat git_repo "db" in
+            init_db db_file;
+            log_to_db (`Git git_repo) rtm_stream
+        | None -> log_to_cmdline rtm_stream
+      end
   end
 
 let execute_t = Cmdliner.Term.(pure execute $ token $ db $ init_tables $ verbose
