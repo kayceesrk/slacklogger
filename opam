@@ -21,11 +21,11 @@ depends: [
   "websocket"       {>=  "2.4"}
   "sqlite3"
   "slacko"
-  "str"
   "ptime"
   "cmdliner"
   "irmin"
-	"git"
+  "git"
+  "git-unix"
 ]
 
 available: [ocaml-version >= "4.02.0"]
